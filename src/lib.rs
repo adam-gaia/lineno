@@ -76,7 +76,7 @@ fn upperbound(s: &mut &str) -> PResult<Option<usize>> {
     Ok(upperbound)
 }
 
-fn filter(s: &mut &str) -> PResult<Filter> {
+fn parse_filter(s: &mut &str) -> PResult<Filter> {
     let start = usize.parse_next(s)?;
 
     let filter = if let Some(end) = opt(upperbound).parse_next(s)? {
@@ -99,7 +99,13 @@ impl Filters {
         Self { filters }
     }
 
-    pub fn filter(&self, input: impl BufRead) -> Result<Vec<String>> {
+    fn join(&mut self, other: &Filters) {
+        for filter in &other.filters {
+            self.filters.push(filter.clone());
+        }
+    }
+
+    fn filter(&self, input: impl BufRead) -> Result<Vec<String>> {
         let lines = input.lines();
 
         let num_filters = self.filters.len();
@@ -182,7 +188,7 @@ fn separator(s: &mut &str) -> PResult<()> {
 }
 
 fn filters(s: &mut &str) -> PResult<Filters> {
-    separated(1.., filter, separator).parse_next(s)
+    separated(1.., parse_filter, separator).parse_next(s)
 }
 
 impl FromStr for Filters {
@@ -190,6 +196,23 @@ impl FromStr for Filters {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         filters.parse(s).map_err(|_| LineNoError::UnableToParse)
     }
+}
+
+pub fn filter(mut filters: Vec<Filters>, input: impl BufRead) -> Result<Vec<String>> {
+    let Some((filter, others)) = filters.split_first_mut() else {
+        let mut output = Vec::new();
+        for line in input.lines() {
+            let line = line?;
+            output.push(line);
+        }
+        return Ok(output);
+    };
+
+    for other in others {
+        filter.join(other);
+    }
+
+    filter.filter(input)
 }
 
 #[cfg(test)]

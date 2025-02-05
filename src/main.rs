@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use lineno::Filters;
+use lineno::{filter, Filters};
 use log::debug;
 use std::fs::File;
 use std::io::stdin;
@@ -9,11 +9,12 @@ use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
 struct Cli {
-    /// TODO
-    lines: Filters,
-
     /// File to filter
+    #[clap(short, long)]
     file: Option<PathBuf>,
+
+    /// TODO
+    lines: Vec<Filters>,
 }
 
 fn main() -> Result<()> {
@@ -26,11 +27,11 @@ fn main() -> Result<()> {
         Some(path) => {
             let f = File::open(path)?;
             let reader = BufReader::new(f);
-            filters.filter(reader)?
+            filter(filters, reader)?
         }
         None => {
             let stdin = stdin().lock();
-            filters.filter(stdin)?
+            filter(filters, stdin)?
         }
     };
 
