@@ -18,7 +18,7 @@ pub enum LineNoError {
 #[derive(Debug, Clone, Eq, PartialEq)]
 struct Range {
     start: usize,
-    /// Unbounded upper bound if None
+    /// Inclusive upperbound. Unbounded if None
     end: Option<usize>,
 }
 
@@ -27,9 +27,9 @@ impl Range {
         let start = self.start;
         if let Some(end) = self.end {
             if end < start {
-                line_num > end && line_num <= start
+                line_num >= end && line_num <= start
             } else {
-                line_num >= start && line_num < end // exclusive upperbound
+                line_num >= start && line_num <= end
             }
         } else {
             // No upperbound
@@ -64,15 +64,7 @@ fn range_separator(s: &mut &str) -> PResult<()> {
 
 fn upperbound(s: &mut &str) -> PResult<Option<usize>> {
     let _ = range_separator.parse_next(s)?;
-    let inclusive = opt("=").parse_next(s)?;
-    let mut upperbound = opt(usize).parse_next(s)?;
-    if let Some(mut upperbound_num) = upperbound {
-        if inclusive.is_some() {
-            // Convert inclusive range to exclusive
-            upperbound_num += 1;
-            upperbound = Some(upperbound_num);
-        }
-    } // else TODO: err if both upperbound is none and inclusive is some
+    let upperbound = opt(usize).parse_next(s)?;
     Ok(upperbound)
 }
 
@@ -264,9 +256,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case("1:2", vec![s!("1")])]
-    #[case("1:3", vec![s!("1"), s!("2")])]
-    #[case("1:=3", vec![s!("1"), s!("2"), s!("3")])]
+    #[case("1:2", vec![s!("1"), s!("2")])]
+    #[case("1:3", vec![s!("1"), s!("2"), s!("3")])]
     #[case("998:", vec![s!("998"), s!("999"), s!("1000")])]
     fn test_range(data: Cursor<String>, #[case] input: &str, #[case] expected: Vec<String>) {
         let filters = Filters::from_str(input).unwrap();
@@ -304,13 +295,6 @@ mod tests {
     ]))]
     #[case("1..", Filters::new(vec![
         Filter::Range(Range{start: 1, end: None})
-    ]))]
-    // Inclusive upperbound
-    #[case("1:=2", Filters::new(vec![
-        Filter::Range(Range{start: 1, end: Some(3)})
-    ]))]
-    #[case("1..=2", Filters::new(vec![
-        Filter::Range(Range{start: 1, end: Some(3)})
     ]))]
     fn test_parse_range_filters(#[case] input: &str, #[case] expected: Filters) {
         let actual = Filters::from_str(input).unwrap();
