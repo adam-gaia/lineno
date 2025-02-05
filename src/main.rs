@@ -13,6 +13,10 @@ struct Cli {
     #[clap(short, long)]
     file: Option<PathBuf>,
 
+    /// Print line numbers
+    #[clap(short, long)]
+    numbers: bool,
+
     /// TODO
     lines: Vec<Filters>,
 }
@@ -35,8 +39,12 @@ fn main() -> Result<()> {
         }
     };
 
-    for line in lines {
-        println!("{}", line);
+    for (number, line) in lines {
+        if args.numbers {
+            println!("{}: {}", number, line);
+        } else {
+            println!("{}", line);
+        }
     }
 
     Ok(())

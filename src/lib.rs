@@ -17,23 +17,25 @@ pub enum LineNoError {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 struct Range {
-    start: usize,
+    /// Inclusive lowerbound. Unbounded if None
+    start: Option<usize>,
     /// Inclusive upperbound. Unbounded if None
     end: Option<usize>,
 }
 
 impl Range {
     fn matches(&self, line_num: usize) -> bool {
-        let start = self.start;
-        if let Some(end) = self.end {
-            if end < start {
-                line_num >= end && line_num <= start
-            } else {
-                line_num >= start && line_num <= end
+        match (self.start, self.end) {
+            (Some(start), Some(end)) => {
+                if end < start {
+                    line_num >= end && line_num <= start
+                } else {
+                    line_num >= start && line_num <= end
+                }
             }
-        } else {
-            // No upperbound
-            line_num >= start
+            (Some(start), None) => line_num >= start,
+            (None, Some(end)) => line_num <= end,
+            (None, None) => true,
         }
     }
 }
@@ -62,22 +64,19 @@ fn range_separator(s: &mut &str) -> PResult<()> {
     Ok(())
 }
 
-fn upperbound(s: &mut &str) -> PResult<Option<usize>> {
+fn range(s: &mut &str) -> PResult<Range> {
+    let start = opt(usize).parse_next(s)?;
     let _ = range_separator.parse_next(s)?;
-    let upperbound = opt(usize).parse_next(s)?;
-    Ok(upperbound)
+    let end = opt(usize).parse_next(s)?;
+    Ok(Range { start, end })
 }
 
 fn parse_filter(s: &mut &str) -> PResult<Filter> {
-    let start = usize.parse_next(s)?;
-
-    let filter = if let Some(end) = opt(upperbound).parse_next(s)? {
-        Filter::Range(Range { start, end })
-    } else {
-        Filter::Number(start)
-    };
-
-    Ok(filter)
+    alt((
+        range.map(|r| Filter::Range(r)),
+        usize.map(|n| Filter::Number(n)),
+    ))
+    .parse_next(s)
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -97,7 +96,7 @@ impl Filters {
         }
     }
 
-    fn filter(&self, input: impl BufRead) -> Result<Vec<String>> {
+    fn filter(&self, input: impl BufRead) -> Result<Vec<(usize, String)>> {
         let lines = input.lines();
 
         let num_filters = self.filters.len();
@@ -105,14 +104,14 @@ impl Filters {
         let mut num_matches = 0;
 
         for (i, line) in lines.enumerate() {
-            let line_number = i + 1;
+            let line_number = i + 1; // Convert index to line number
             let line = line?;
 
             for (group_idx, filter) in self.filters.iter().enumerate() {
                 debug!("{line_number}, {:?}", filter);
                 if filter.matches(line_number) {
                     debug!("match");
-                    groups[group_idx].push(line.clone());
+                    groups[group_idx].push((line_number, line.clone()));
                     num_matches += 1;
                 }
             }
@@ -123,25 +122,29 @@ impl Filters {
             let filter = self.filters.get(i).unwrap();
             match filter {
                 Filter::Range(range) => {
-                    if let Some(end) = range.end {
-                        if range.start > end {
-                            for line in group.iter().rev() {
-                                ret.push(line.clone());
-                            }
-                        } else {
-                            for line in group {
-                                ret.push(line.clone());
+                    // The only reason we need to match (instead of just adding all items from the group) is to reverse items when the range is backwards
+                    match (range.start, range.end) {
+                        (Some(start), Some(end)) => {
+                            if start > end {
+                                for entry in group.iter().rev() {
+                                    ret.push(entry.clone());
+                                }
+                            } else {
+                                for entry in group {
+                                    ret.push(entry.clone());
+                                }
                             }
                         }
-                    } else {
-                        // No upperbound
-                        for line in group {
-                            ret.push(line.clone());
+                        _ => {
+                            for entry in group {
+                                ret.push(entry.clone());
+                            }
                         }
                     }
                 }
                 Filter::Number(_) => {
-                    ret.push(group.first().unwrap().to_string());
+                    let (line_number, line) = group.first().unwrap();
+                    ret.push((*line_number, line.to_string()));
                 }
             }
         }
@@ -190,12 +193,14 @@ impl FromStr for Filters {
     }
 }
 
-pub fn filter(mut filters: Vec<Filters>, input: impl BufRead) -> Result<Vec<String>> {
+/// Filter input
+pub fn filter(mut filters: Vec<Filters>, input: impl BufRead) -> Result<Vec<(usize, String)>> {
     let Some((filter, others)) = filters.split_first_mut() else {
         let mut output = Vec::new();
-        for line in input.lines() {
+        for (i, line) in input.lines().enumerate() {
             let line = line?;
-            output.push(line);
+            let num = i + 1; // Convert index to line number
+            output.push((num, line));
         }
         return Ok(output);
     };
@@ -233,7 +238,12 @@ mod tests {
     fn test_no_filters(data: Cursor<String>) {
         let filters = Filters::new(Vec::new());
         let expected: Vec<String> = vec![];
-        let actual = filters.filter(data).unwrap();
+        let actual: Vec<_> = filters
+            .filter(data)
+            .unwrap()
+            .iter()
+            .map(|(_, line)| line.clone())
+            .collect();
         assert_eq!(expected, actual);
     }
 
@@ -251,7 +261,12 @@ mod tests {
         let s = n.to_string();
         let filters = Filters::from_str(&s).unwrap();
         let expected = vec![s];
-        let actual = filters.filter(data).unwrap();
+        let actual: Vec<_> = filters
+            .filter(data)
+            .unwrap()
+            .iter()
+            .map(|(_, line)| line.clone())
+            .collect();
         assert_eq!(expected, actual);
     }
 
@@ -261,7 +276,12 @@ mod tests {
     #[case("998:", vec![s!("998"), s!("999"), s!("1000")])]
     fn test_range(data: Cursor<String>, #[case] input: &str, #[case] expected: Vec<String>) {
         let filters = Filters::from_str(input).unwrap();
-        let actual = filters.filter(data).unwrap();
+        let actual: Vec<_> = filters
+            .filter(data)
+            .unwrap()
+            .iter()
+            .map(|(_, line)| line.clone())
+            .collect();
         assert_eq!(expected, actual);
     }
 
@@ -284,17 +304,17 @@ mod tests {
     #[rstest]
     // Both ends defined
     #[case("1:2", Filters::new(vec![
-        Filter::Range(Range {start: 1, end: Some(2)})
+        Filter::Range(Range {start: Some(1), end: Some(2)})
     ]))]
     #[case("1..2", Filters::new(vec![
-        Filter::Range(Range {start: 1, end: Some(2)})
+        Filter::Range(Range {start: Some(1), end: Some(2)})
     ]))]
     // No upperbound
     #[case("1:", Filters::new(vec![
-        Filter::Range(Range{start: 1, end: None})
+        Filter::Range(Range{start: Some(1), end: None})
     ]))]
     #[case("1..", Filters::new(vec![
-        Filter::Range(Range{start: 1, end: None})
+        Filter::Range(Range{start: Some(1), end: None})
     ]))]
     fn test_parse_range_filters(#[case] input: &str, #[case] expected: Filters) {
         let actual = Filters::from_str(input).unwrap();
@@ -314,38 +334,38 @@ mod tests {
     ]))]
     /// List of ranges
     #[case("1:2,2:3,3:4", Filters::new(vec![
-        Filter::Range(Range{start: 1, end: Some(2)}),
-        Filter::Range(Range{start: 2, end: Some(3)}),
-        Filter::Range(Range{start: 3, end: Some(4)})
+        Filter::Range(Range{start: Some(1), end: Some(2)}),
+        Filter::Range(Range{start: Some(2), end: Some(3)}),
+        Filter::Range(Range{start: Some(3), end: Some(4)})
     ]))]
     #[case("1:2 2:3 3:4", Filters::new(vec![
-        Filter::Range(Range{start: 1, end: Some(2)}),
-        Filter::Range(Range{start: 2, end: Some(3)}),
-        Filter::Range(Range{start: 3, end: Some(4)})
+        Filter::Range(Range{start: Some(1), end: Some(2)}),
+        Filter::Range(Range{start: Some(2), end: Some(3)}),
+        Filter::Range(Range{start: Some(3), end: Some(4)})
     ]))]
     #[case("1:2, 2:3, 3:4", Filters::new(vec![
-        Filter::Range(Range{start: 1, end: Some(2)}),
-        Filter::Range(Range{start: 2, end: Some(3)}),
-        Filter::Range(Range{start: 3, end: Some(4)})
+        Filter::Range(Range{start: Some(1), end: Some(2)}),
+        Filter::Range(Range{start: Some(2), end: Some(3)}),
+        Filter::Range(Range{start: Some(3), end: Some(4)})
     ]))]
     // Lists and numbers
     #[case("1,2,3:4,5:6", Filters::new(vec![
         Filter::Number(1),
         Filter::Number(2),
-        Filter::Range(Range{start: 3, end: Some(4)}),
-        Filter::Range(Range{start: 5, end: Some(6)}),
+        Filter::Range(Range{start: Some(3), end: Some(4)}),
+        Filter::Range(Range{start: Some(5), end: Some(6)}),
     ]))]
     #[case("1 2 3:4 5:6", Filters::new(vec![
         Filter::Number(1),
         Filter::Number(2),
-        Filter::Range(Range{start: 3, end: Some(4)}),
-        Filter::Range(Range{start: 5, end: Some(6)}),
+        Filter::Range(Range{start: Some(3), end: Some(4)}),
+        Filter::Range(Range{start: Some(5), end: Some(6)}),
     ]))]
     #[case("1, 2, 3:4, 5:6", Filters::new(vec![
         Filter::Number(1),
         Filter::Number(2),
-        Filter::Range(Range{start: 3, end: Some(4)}),
-        Filter::Range(Range{start: 5, end: Some(6)}),
+        Filter::Range(Range{start: Some(3), end: Some(4)}),
+        Filter::Range(Range{start: Some(5), end: Some(6)}),
     ]))]
     fn test_parse_complex_filters(#[case] input: &str, #[case] expected: Filters) {
         let actual = Filters::from_str(input).unwrap();
