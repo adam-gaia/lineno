@@ -152,3 +152,25 @@ line 3
 ```
 
 ### Options
+
+- `-f, --file <file>`
+  You've already seen the '-f' option to provide an input file:
+
+```console
+$ lineno -f ./tests/small.txt
+line 1
+line 2
+line 3
+
+```
+
+- `-n`,`--number`
+  The '-n' option displays line numbers along with the line's content:
+
+```console
+$ lineno -f ./tests/small.txt -n
+1: line 1
+2: line 2
+3: line 3
+
+```
