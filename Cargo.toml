@@ -1,0 +1,27 @@
+[package]
+name = "lineno"
+description = "Display specific lines or ranges of lines of a file"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+homepage = "https://github.com/adam-gaia/lineno"
+repository = "https://github.com/adam-gaia/lineno"
+
+[[bin]]
+name = "lineno"
+source = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.95"
+clap = { version = "4.5.25", features = ["derive"] }
+env_logger = "0.11.6"
+log = "0.4.22"
+thiserror = "2.0.11"
+winnow = "0.6.22"
+
+[dev-dependencies]
+lazy_static = "1.5.0"
+pretty_assertions = "1.4.1"
+rstest = "0.24.0"
+s-string = "1.0.0"
+trycmd = "0.15.8"
