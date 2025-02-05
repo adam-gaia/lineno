@@ -20,7 +20,7 @@ didgeridoo
 
 ```
 
-What if we want lines 10 through 15 and line 26?. My unix-foo isn't good enough to do that in a single pipeline off the top of my head.
+What if we want lines 10 through 15 and line 26? My unix-foo isn't good enough to do that in a single pipeline off the top of my head.
 But of course its trivial with lineno:
 
 ```console
@@ -63,11 +63,11 @@ baz
 
 ```
 
-- Both the upper and lower bounds on ranges are *inclusive*
+Both the upper and lower bounds on ranges are *inclusive*.
 
-- Ranges may either be specified with a ':' or '..' (`1..10` and `1:10` are equivalent) (like the `head` util)
+Ranges may either be specified with a ':' or '..' (`1..10` and `1:10` are equivalent) (like the `head` util)
 
-- Omitting the upperbound returns all lines from the lowerbound to the end of the file (`24..`) (like the `tail` util)
+Omitting the upperbound returns all lines from the lowerbound to the end of the file (`24..`) (like the `tail` util)
 
 ```console
 $ lineno -f ./tests/rocket.txt 8..
@@ -78,7 +78,7 @@ blast off!
 
 ```
 
-- Likewise, omitting the lowerbound returns all lines from the start of the file to the upperbound
+Likewise, omitting the lowerbound returns all lines from the start of the file to the upperbound
 
 ```console
 $ lineno -f ./tests/rocket.txt ..4
@@ -89,9 +89,7 @@ $ lineno -f ./tests/rocket.txt ..4
 
 ```
 
-- Multiple filters may be specified by commas or whitespace
-
-  - There is no need for lists of filters to be in numerical order
+Multiple filters may be specified by commas or whitespace. There is no need for lists of filters to be in numerical order
 
 ```console
 $ lineno -f file.txt 3 2 1 10:12
@@ -104,7 +102,7 @@ baz
 
 ```
 
-- Or unique
+or unique
 
 ```console
 $ lineno -f file.txt 23 23 23 25
